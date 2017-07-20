@@ -5,7 +5,6 @@ import javax.imageio.ImageIO;
 import java.io.File;
 import java.awt.image.*;
 import java.util.LinkedList;
-import java.awt.geom.Rectangle2D;
 import java.nio.file.*;
 
 /**
@@ -17,15 +16,14 @@ public class ImageContainer extends JComponent implements MouseListener, MouseMo
   private int height;                           // Total height of the image container
   private int imgXPos;                          // Starting X coordinate of the image
   private int imgYPos;                          // Starting Y coordinate of the image
-  private int xDif;                             // Difference between the start X of the container and the image X pos
-  private int yDif;                             // Difference between the start Y of the container and the image Y pos
   private ListItem openedItem;                  // The list item currently opened in the container
   private BufferedImage orgImg;                 // Buffered image of the unedited image
-  private BufferedImage scaledImg;              // Buffered image of the rescaled image
-  private float imgScale;                       // Current scale that the image is being displayed at
+  private BufferedImage scaledImg;              // Buffered image of the full rescaled image
+  private float imgScale;                       // Current scale that the full image is being displayed at
   private MarkerControlPanel controlPanel;      // Control panel associated with the image
-  private LinkedList<Rectangle2D> bboxes;       // List of currently displayed rectangles
-  private LinkedList<Rectangle2D> redoList;     // List of rectangles that have been deleted or undone
+
+  private LinkedList<RectFrame> bboxes;         // List of currently displayed rectangles
+  private LinkedList<RectFrame> redoList;       // List of rectangles that have been deleted or undone
   private boolean clearedLast;                  // Whether or not the last operation was a clear
   private boolean mousePressed;                 // Whether or not the mouse is currently pressed
   private boolean drawStarted;                  // Whether or not the drawing of a rectangle has been started
@@ -35,6 +33,7 @@ public class ImageContainer extends JComponent implements MouseListener, MouseMo
   private float rectStartY;                     // The adjusted starting Y coordinate of the rectangle currently being drawn
   private float rectWidth;                      // The width of the rectangle currently being drawn
   private float rectHeight;                     // The height of the rectangle currently being drawn
+  private int rectType;                         // Type of the rect frame currenly being drawn (in the current state 0 is an easy face, and 1 is a hard face)
   public static final int MIN_RECT_AREA = 15;   // The minimum area allowed for a saved rectangle at the current viewing scale
 
   /**
@@ -47,15 +46,14 @@ public class ImageContainer extends JComponent implements MouseListener, MouseMo
     this.height = h;
     this.imgXPos = 0;
     this.imgYPos = 0;
-    this.xDif = 0;
-    this.yDif = 0;
     setPreferredSize(new Dimension(this.width, this.height));
     this.openedItem = null;
     this.orgImg = null;
     this.scaledImg = null;
     this.imgScale = 1;
-    this.bboxes = new LinkedList<Rectangle2D>();
-    this.redoList = new LinkedList<Rectangle2D>();
+
+    this.bboxes = new LinkedList<RectFrame>();
+    this.redoList = new LinkedList<RectFrame>();
     this.clearedLast = false;
     this.mousePressed = false;
     this.drawStarted = false;
@@ -65,6 +63,8 @@ public class ImageContainer extends JComponent implements MouseListener, MouseMo
     this.rectStartY = 0;
     this.rectWidth = 0;
     this.rectHeight = 0;
+    this.rectType = 0;
+
     addMouseListener(this);
     addMouseMotionListener(this);
   }
@@ -84,26 +84,12 @@ public class ImageContainer extends JComponent implements MouseListener, MouseMo
   }
 
   /**
-   * Updates the scale of the image and rectangles to fit the current size of the conatainer
-   */
-  public void updateImageScale() {
-    if (this.orgImg != null) {
-      this.imgScale = rescaleRatio(this.orgImg, this.width, this.height);
-      this.scaledImg = rescaleImg(this.orgImg, this.imgScale);
-      this.xDif = this.width - this.scaledImg.getWidth();
-      this.yDif = this.height - this.scaledImg.getHeight();
-      this.imgXPos = this.xDif/2;
-      this.imgYPos = this.yDif/2;
-    }
-  }
-
-  /**
    * Updates the scale of all rectangles to fit the current width and height
    */
   public void updateRectangleScale() {
     if (this.orgImg != null) {
-      LinkedList<Rectangle2D> orgBoxes = getRescaledRectangles(this.bboxes);
-      LinkedList<Rectangle2D> orgRedos = getRescaledRectangles(this.redoList);
+      LinkedList<RectFrame> orgBoxes = getRescaledRectangles(this.bboxes);
+      LinkedList<RectFrame> orgRedos = getRescaledRectangles(this.redoList);
       updateImageScale();
       this.bboxes = getScaledRectangles(orgBoxes);
       this.redoList = getScaledRectangles(orgRedos);
@@ -111,10 +97,24 @@ public class ImageContainer extends JComponent implements MouseListener, MouseMo
   }
 
   /**
-   * Sets the given list of rectangles to be the current displayed list
-   * @param LinkedList<Rectangle2D> rects List of rectangles to set as the displayed set
+   * Updates the scale of the image and rectangles to fit the current size of the conatainer
    */
-  public void loadRectangles(LinkedList<Rectangle2D> rects) {
+  public void updateImageScale() {
+    if (this.orgImg != null) {
+      this.imgScale = rescaleRatio(this.orgImg, this.width, this.height);
+      this.scaledImg = rescaleImg(this.orgImg, this.imgScale);
+      int xDif = this.width - this.scaledImg.getWidth();
+      int yDif = this.height - this.scaledImg.getHeight();
+      this.imgXPos = xDif/2;
+      this.imgYPos = yDif/2;
+    }
+  }
+
+  /**
+   * Sets the given list of rectangles to be the current displayed list
+   * @param LinkedList<RectFrame> rects List of rectangles to set as the displayed set
+   */
+  public void loadRectangles(LinkedList<RectFrame> rects) {
     this.bboxes = getScaledRectangles(rects);
   }
 
@@ -128,8 +128,9 @@ public class ImageContainer extends JComponent implements MouseListener, MouseMo
       try {
         this.orgImg = ImageIO.read(path.toFile());
         updateImageScale();
-        this.bboxes = new LinkedList<Rectangle2D>();
-        this.redoList = new LinkedList<Rectangle2D>();
+
+        this.bboxes = new LinkedList<RectFrame>();
+        this.redoList = new LinkedList<RectFrame>();
         this.mousePressed = false;
         this.rectStartX = 0;
         this.rectStartY = 0;
@@ -219,7 +220,7 @@ public class ImageContainer extends JComponent implements MouseListener, MouseMo
   public void undo() {
     // If a clear was the last action, restores all rectangles before the clear
     if (this.clearedLast) {
-      this.bboxes = (LinkedList<Rectangle2D>)this.redoList.clone();
+      this.bboxes = (LinkedList<RectFrame>)this.redoList.clone();
       this.redoList.clear();
       this.clearedLast = false;
     // If the last action was not a clear, undos the last drawn rectangle and adds it to the redo list
@@ -243,7 +244,7 @@ public class ImageContainer extends JComponent implements MouseListener, MouseMo
    * Clears all existing drawn rectangles on the image and adds them to the redo list
    */
   public void clear() {
-    this.redoList = (LinkedList<Rectangle2D>)this.bboxes.clone();
+    this.redoList = (LinkedList<RectFrame>)this.bboxes.clone();
     this.bboxes.clear();
     this.clearedLast = true;
     repaint();
@@ -252,12 +253,12 @@ public class ImageContainer extends JComponent implements MouseListener, MouseMo
   /**
    * Rescales all existing rectangles from the scaled image to match the original dimensions of the image
    * The function is used before saving to the file
-   * @param  LinkedList<Rectangle2D> rects         The list of rectangles to rescale
+   * @param  LinkedList<RectFrame> rects         The list of rectangles to rescale
    * @return                         List of all rescaled rectangles to match the original image
    */
-  public LinkedList<Rectangle2D> getRescaledRectangles(LinkedList<Rectangle2D> rects) {
-    LinkedList<Rectangle2D> rescaledRects = new LinkedList<Rectangle2D>();
-    for (Rectangle2D rect : rects)
+  public LinkedList<RectFrame> getRescaledRectangles(LinkedList<RectFrame> rects) {
+    LinkedList<RectFrame> rescaledRects = new LinkedList<RectFrame>();
+    for (RectFrame rect : rects)
       rescaledRects.add(rescaleRectangle(rect));
     return rescaledRects;
   }
@@ -267,24 +268,24 @@ public class ImageContainer extends JComponent implements MouseListener, MouseMo
    * The function is used before saving to the file
    * @return List of all rescaled rectangles to match the original image
    */
-  public LinkedList<Rectangle2D> getRescaledRectangles() {
-    LinkedList<Rectangle2D> rescaledRects = new LinkedList<Rectangle2D>();
-    for (Rectangle2D rect : this.bboxes)
+  public LinkedList<RectFrame> getRescaledRectangles() {
+    LinkedList<RectFrame> rescaledRects = new LinkedList<RectFrame>();
+    for (RectFrame rect : this.bboxes)
       rescaledRects.add(rescaleRectangle(rect));
     return rescaledRects;
   }
 
   /**
    * Rescales a given rectangle to match the dimensions of the original image
-   * @param  Rectangle2D org           Original rectangle to rescale
+   * @param  RectFrame org           Original rectangle to rescale
    * @return             Rescaled rectangle
    */
-  public Rectangle2D rescaleRectangle(Rectangle2D org) {
+  public RectFrame rescaleRectangle(RectFrame org) {
     float newStartX = (float)(org.getX()-this.imgXPos)*(1/this.imgScale);
     float newStartY = (float)(org.getY()-this.imgYPos)*(1/this.imgScale);
     float newWidth = (float)org.getWidth()*(1/this.imgScale);
     float newHeight = (float)org.getHeight()*(1/this.imgScale);
-    return new Rectangle2D.Float(newStartX, newStartY, newWidth, newHeight);
+    return new RectFrame(newStartX, newStartY, newWidth, newHeight, org.getType());
   }
 
   /**
@@ -293,9 +294,9 @@ public class ImageContainer extends JComponent implements MouseListener, MouseMo
    * @param  LinkedList<Rectangle> orgRects      List of rectangles to load in and fit to the image
    * @return                       List of rescaled rectangles to match the image
    */
-  public LinkedList<Rectangle2D> getScaledRectangles(LinkedList<Rectangle2D> orgRects) {
-    LinkedList<Rectangle2D> scaledRects = new LinkedList<Rectangle2D>();
-    for (Rectangle2D rect : orgRects)
+  public LinkedList<RectFrame> getScaledRectangles(LinkedList<RectFrame> orgRects) {
+    LinkedList<RectFrame> scaledRects = new LinkedList<RectFrame>();
+    for (RectFrame rect : orgRects)
       scaledRects.add(scaleRectangle(rect));
     return scaledRects;
   }
@@ -306,12 +307,12 @@ public class ImageContainer extends JComponent implements MouseListener, MouseMo
    * @param  Rectangle org           Rectangle to rescale
    * @return           Rescaled rectangle to match the scaled image
    */
-  public Rectangle2D scaleRectangle(Rectangle2D org) {
+  public RectFrame scaleRectangle(RectFrame org) {
     float newStartX = (float)(org.getX()*(this.imgScale))+this.imgXPos;
     float newStartY = (float)(org.getY()*(this.imgScale))+this.imgYPos;
     float newWidth = (float)org.getWidth()*(this.imgScale);
     float newHeight = (float)org.getHeight()*(this.imgScale);
-    return new Rectangle2D.Float(newStartX, newStartY, newWidth, newHeight);
+    return new RectFrame(newStartX, newStartY, newWidth, newHeight, org.getType());
   }
 
   /**
@@ -339,7 +340,7 @@ public class ImageContainer extends JComponent implements MouseListener, MouseMo
     int numOfDeletes = 0;
     for (int i=0; i < this.bboxes.size(); i++) {
       int listIdx = i-numOfDeletes;
-      Rectangle2D curRect = this.bboxes.get(listIdx);
+      RectFrame curRect = this.bboxes.get(listIdx);
       if (curRect.contains(x, y)) {
         this.redoList.push(curRect);
         this.bboxes.remove(listIdx);
@@ -359,6 +360,64 @@ public class ImageContainer extends JComponent implements MouseListener, MouseMo
   }
 
   /**
+   * Begins the drawing of a rectangle given the mouse event
+   * @param MouseEvent e Current mouse event
+   */
+  public void beginDrawing(MouseEvent e) {
+    this.mousePressed = true;
+    this.drawStarted = true;
+    this.rectOrgX = e.getX();
+    this.rectOrgY = e.getY();
+    this.rectStartX = e.getX();
+    this.rectStartY = e.getY();
+    this.rectWidth = 0;
+    this.rectHeight = 0;
+    try {
+      this.rectType = this.controlPanel.getDrawType();
+    } catch (Exception ex) {
+      System.out.println("Error when getting draw type!: " + ex);
+    }
+  }
+
+  /**
+   * Updates the rectangle currently being drawn
+   * @param MouseEvent e Current mouse event
+   */
+  public void updateDrawing(MouseEvent e) {
+    if (e.getX() < this.rectOrgX) {
+      this.rectStartX = e.getX();
+      this.rectWidth = this.rectOrgX - e.getX();
+    } else
+      this.rectWidth = e.getX() - this.rectStartX;
+
+    if (e.getY() < this.rectOrgY) {
+      this.rectStartY = e.getY();
+      this.rectHeight = this.rectOrgY - e.getY();
+    } else
+      this.rectHeight = e.getY() - this.rectStartY;
+    repaint();
+  }
+
+  /**
+   * Ends the rectangle currently being drawn
+   * @param MouseEvent e Current mouse event
+   */
+  public void endDrawing(MouseEvent e) {
+    this.mousePressed = false;
+    this.drawStarted = false;
+    if (this.rectWidth*this.rectHeight >= ImageContainer.MIN_RECT_AREA) {
+      this.bboxes.push(new RectFrame(this.rectStartX, this.rectStartY,
+          this.rectWidth, this.rectHeight, this.rectType));
+
+      if (this.clearedLast) {
+        this.redoList.clear();
+        this.clearedLast = false;
+      }
+    }
+    repaint();
+  }
+
+  /**
    * Whenever the mouse is clicked and dragged the method is called
    * @param MouseEvent e Current mouse event
    */
@@ -369,44 +428,15 @@ public class ImageContainer extends JComponent implements MouseListener, MouseMo
 
         // If a rectangle drawing is not currently started
         if (!drawStarted) {
-          this.mousePressed = true;
-          this.drawStarted = true;
-          this.rectOrgX = e.getX();
-          this.rectOrgY = e.getY();
-          this.rectStartX = e.getX();
-          this.rectStartY = e.getY();
+          beginDrawing(e);
         }
-
-        if (e.getX() < this.rectOrgX) {
-          this.rectStartX = e.getX();
-          this.rectWidth = this.rectOrgX - e.getX();
-        } else
-          this.rectWidth = e.getX() - this.rectStartX;
-
-        if (e.getY() < this.rectOrgY) {
-          this.rectStartY = e.getY();
-          this.rectHeight = this.rectOrgY - e.getY();
-        } else
-          this.rectHeight = e.getY() - this.rectStartY;
-        if (this.clearedLast) {
-          this.redoList.clear();
-          this.clearedLast = false;
-        }
-        repaint();
+        updateDrawing(e);
       }
     // If the mouse is not within the image, ends the rectangle currently being drawn
     } else {
       if (this.drawStarted) {
         if (this.controlPanel.getMode() != null && this.controlPanel.getMode().equals("draw")) {
-          this.mousePressed = false;
-          this.bboxes.push(new Rectangle2D.Float(this.rectStartX, this.rectStartY,
-              this.rectWidth, this.rectHeight));
-          this.drawStarted = false;
-          if (this.clearedLast) {
-            this.redoList.clear();
-            this.clearedLast = false;
-          }
-          repaint();
+          endDrawing(e);
         }
       }
     }
@@ -420,18 +450,7 @@ public class ImageContainer extends JComponent implements MouseListener, MouseMo
     if (containsImage(e.getX(), e.getY())) {
       // Starts drawing a new rectangle if in draw mode
       if (this.controlPanel.getMode() != null && this.controlPanel.getMode().equals("draw")) {
-        this.mousePressed = true;
-        this.drawStarted = true;
-        this.rectOrgX = e.getX();
-        this.rectOrgY = e.getY();
-        this.rectStartX = e.getX();
-        this.rectStartY = e.getY();
-        this.rectWidth = 0;
-        this.rectHeight = 0;
-        if (this.clearedLast) {
-          this.redoList.clear();
-          this.clearedLast = false;
-        }
+        beginDrawing(e);
       // Runs the deletion cycle if in deletion mode
       } else if (this.controlPanel.getMode() != null && this.controlPanel.getMode().equals("delete")) {
         deleteOverlapRects(e.getX(), e.getY());
@@ -447,16 +466,7 @@ public class ImageContainer extends JComponent implements MouseListener, MouseMo
   public void mouseReleased(MouseEvent e) {
     if (this.drawStarted) {
       if (this.controlPanel.getMode() != null && this.controlPanel.getMode().equals("draw")) {
-        this.mousePressed = false;
-        if (this.rectWidth*this.rectHeight >= ImageContainer.MIN_RECT_AREA)
-          this.bboxes.push(new Rectangle2D.Float(this.rectStartX, this.rectStartY,
-              this.rectWidth, this.rectHeight));
-        this.drawStarted = false;
-        if (this.clearedLast) {
-          this.redoList.clear();
-          this.clearedLast = false;
-        }
-        repaint();
+        endDrawing(e);
       }
     }
   }
@@ -481,14 +491,24 @@ public class ImageContainer extends JComponent implements MouseListener, MouseMo
     g2d.drawImage(this.scaledImg, null, this.imgXPos, this.imgYPos);
 
     if (mousePressed) {
-      g2d.setColor(new Color(0, 255, 0));
+      // Easy faces
+      if (this.rectType == 0)
+        g2d.setColor(new Color(0, 255, 0));
+      // Hard faces
+      else
+        g2d.setColor(new Color(0, 0, 255));
       g2d.drawRect((int)this.rectStartX-1, (int)this.rectStartY-1, (int)this.rectWidth+2, (int)this.rectHeight+2);
       g2d.setColor(new Color(255, 0, 0));
       g2d.drawRect((int)this.rectStartX, (int)this.rectStartY, (int)this.rectWidth, (int)this.rectHeight);
     }
 
-    for (Rectangle2D rect : this.bboxes) {
-      g2d.setColor(new Color(0, 255, 0));
+    for (RectFrame rect : this.bboxes) {
+      // Easy faces
+      if (rect.getType() == 0)
+        g2d.setColor(new Color(0, 255, 0));
+      // Hard faces
+      else
+        g2d.setColor(new Color(0, 0, 255));
       g2d.drawRect((int)rect.getX()-1, (int)rect.getY()-1, (int)rect.getWidth()+2, (int)rect.getHeight()+2);
       g2d.setColor(new Color(255, 0, 0));
       g2d.drawRect((int)rect.getX(), (int)rect.getY(), (int)rect.getWidth(), (int)rect.getHeight());

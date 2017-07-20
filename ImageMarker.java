@@ -5,7 +5,6 @@ import java.util.LinkedList;
 import java.awt.image.*;
 import java.nio.file.*;
 import java.util.Scanner;
-import java.awt.geom.Rectangle2D;
 
 /**
  * Component class to allow for the marking of an image with bounding boxes
@@ -110,7 +109,7 @@ public class ImageMarker extends JPanel {
   public void openCompletedImage(ListItem item) {
     openImage(item);
     Path savePath = ScrollList.convertToSavePath(this.imgDirPath, this.saveDirPath, this.openedItem.getPath());
-    LinkedList<Rectangle2D> rectangles = getSaveRectangles(savePath);
+    LinkedList<RectFrame> rectangles = getSaveRectangles(savePath);
     this.imageContainer.loadRectangles(rectangles);
   }
 
@@ -119,8 +118,8 @@ public class ImageMarker extends JPanel {
    * @param  Path savePath      Path to load the save file from
    * @return      List of rectangles previously saved
    */
-  public LinkedList<Rectangle2D> getSaveRectangles(Path savePath) {
-    LinkedList<Rectangle2D> rects = new LinkedList<Rectangle2D>();
+  public LinkedList<RectFrame> getSaveRectangles(Path savePath) {
+    LinkedList<RectFrame> rects = new LinkedList<RectFrame>();
     Scanner scan = null;
     try {
       scan = new Scanner(new FileReader(savePath.toFile()));
@@ -132,11 +131,15 @@ public class ImageMarker extends JPanel {
         String line = scan.nextLine();
         String[] parts = line.split(",");
         for (int i = 0; i < parts.length; i++) {
-          float x = Float.parseFloat(parts[0]);
-          float y = Float.parseFloat(parts[1]);
-          float w = Float.parseFloat(parts[2]);
-          float h = Float.parseFloat(parts[3]);
-          rects.add(new Rectangle2D.Float(x, y, w, h));
+          Double x = Double.parseDouble(parts[0]);
+          Double y = Double.parseDouble(parts[1]);
+          Double w = Double.parseDouble(parts[2]);
+          Double h = Double.parseDouble(parts[3]);
+          int type = 0;
+          // Allows for the loading of saves without saved types
+          if (parts.length > 4)
+            type = Integer.parseInt(parts[4]);
+          rects.add(new RectFrame(x, y, w, h, type));
         }
       }
     } catch (Exception e) {
@@ -184,11 +187,11 @@ public class ImageMarker extends JPanel {
       pw.println(firstLine);
       BufferedImage orgImg = this.imageContainer.getOrgImg();
       pw.println(orgImg.getWidth() + "," + orgImg.getHeight());
-      LinkedList<Rectangle2D> rects = this.imageContainer.getRescaledRectangles();
+      LinkedList<RectFrame> rects = this.imageContainer.getRescaledRectangles();
       pw.println(rects.size());
-      for (Rectangle2D rect : rects) {
+      for (RectFrame rect : rects) {
         String rectLine = rect.getX() + "," + rect.getY() + "," +
-            rect.getWidth() + "," + rect.getHeight();
+            rect.getWidth() + "," + rect.getHeight() + "," + rect.getType();
           pw.println(rectLine);
       }
 

@@ -80,13 +80,18 @@ public class MarkerControlPanel extends JPanel {
    * Creates and adds all the mode buttons (draw, delete) to the panel
    */
   public void addModeButtons() {
-    ToggleButton drawButton = new ToggleButton(this.modePanel, "Draw", "draw",
-        new Color(150, 150, 150), this.width-1, this.defaultButtonHeight, null);
-    this.modePanel.addButton(drawButton);
-    this.buttons.add(drawButton);
+    ToggleButton drawEasyButton = new ToggleButton(this.modePanel, "Draw Easy Face",
+        "draw", 0, new Color(150, 150, 150), this.width-1, this.defaultButtonHeight, null);
+    this.modePanel.addButton(drawEasyButton);
+    this.buttons.add(drawEasyButton);
 
-    ToggleButton deleteButton = new ToggleButton(this.modePanel, "Delete",
-        "delete", new Color(150, 150, 150), this.width-1, this.defaultButtonHeight, null);
+    ToggleButton drawHardButton = new ToggleButton(this.modePanel, "Draw Hard Face",
+        "draw", 1, new Color(150, 150, 150), this.width-1, this.defaultButtonHeight, null);
+    this.modePanel.addButton(drawHardButton);
+    this.buttons.add(drawHardButton);
+
+    ToggleButton deleteButton = new ToggleButton(this.modePanel, "Delete", "delete",
+        -1, new Color(150, 150, 150), this.width-1, this.defaultButtonHeight, null);
     this.modePanel.addButton(deleteButton);
     this.buttons.add(deleteButton);
   }
@@ -147,6 +152,18 @@ public class MarkerControlPanel extends JPanel {
       return toggled.getMode();
     else
       return null;
+  }
+
+  public int getDrawType() throws Exception {
+    ToggleButton toggled = this.modePanel.getToggled();
+    if (toggled != null) {
+      if (!toggled.getMode().equals("draw")) {
+        throw new Exception("Toggled button has no valid type!");
+      } else {
+        return toggled.getType();
+      }
+    } else
+      return -1;
   }
 
   @Override

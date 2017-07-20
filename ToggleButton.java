@@ -10,10 +10,15 @@ public class ToggleButton extends AppButton {
   private boolean toggled;                // Whether or not the button is currently toggled
   private Color toggleColor;              // Color of the button when toggled
   private String mode;                    // String representing the "mode" that the button initializes
+  private int type;                       // Draw type
 
-  public ToggleButton(SingleTogglePanel panel, String name, String mode, Color toggle, int w, int h, Runnable fun) {
+  public ToggleButton(SingleTogglePanel panel, String name, String mode, int type, Color toggle, int w, int h, Runnable fun) {
     super(name, w, h, fun);
     this.mode = mode;
+    if (this.mode.equals("draw"))
+      this.type = type;
+    else
+      this.type = -1;
     this.togglePanel = panel;
     this.toggled = false;
     this.toggleColor = toggle;
@@ -25,6 +30,14 @@ public class ToggleButton extends AppButton {
    */
   public String getMode() {
     return this.mode;
+  }
+
+  /**
+   * Returns the draw type (-1 if button is not a draw mode)
+   * @return Draw type of the button
+   */
+  public int getType() {
+    return this.type;
   }
 
   /**
