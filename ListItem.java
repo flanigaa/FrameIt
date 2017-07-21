@@ -140,6 +140,7 @@ public class ListItem extends JComponent implements Comparable<ListItem> {
         this.path.toString(), this.isDir);
   }
 
+  @Override
   public int compareTo(ListItem o2) {
     return this.name.compareTo(o2.name);
   }
